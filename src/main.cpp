@@ -66,6 +66,10 @@ constexpr uint32_t PollIntervalMs = 5000;
 constexpr uint32_t WifiRetryMs = 10000;
 constexpr uint32_t TouchDebounceMs = 450;
 constexpr uint32_t EvccTimeoutMs = 8000;
+constexpr uint8_t MaxSilentFetchFailures = 2;
+
+const char EvccStateQuery[] =
+    "/api/state?jq=%7Bloadpoints%3A%5B.loadpoints%5B%5D%7C%7Btitle%2Cmode%2CvehicleTitle%2Cconnected%2Ccharging%2Cenabled%2CvehicleSoc%2CchargePower%7D%5D%2CpvPower%2CgridPower%2Cgrid%3A%7Bpower%3A.grid.power%7D%2Csite%3A%7BpvPower%3A.site.pvPower%7D%7D";
 
 constexpr uint16_t ColorBg = 0xF79E;
 constexpr uint16_t ColorCard = TFT_WHITE;
@@ -137,6 +141,7 @@ String lastMetricsKey;
 String lastErrorKey;
 bool lastConnected = false;
 bool connectionStateKnown = false;
+uint8_t consecutiveFetchFailures = 0;
 
 String evccBaseUrl() {
   return String("http://") + appConfig.evccHost + ":" + String(appConfig.evccPort);
@@ -241,7 +246,8 @@ void drawButton(const ModeButton &button) {
 
   tft.fillRect(button.x, button.y, button.w, button.h, fill);
   drawFrame(button.x, button.y, button.w, button.h, frame);
-  drawGfxText(button.x + button.w / 2, button.y + 17, button.label, &FreeSansBold9pt7b, text, fill, MC_DATUM);
+  drawGfxText(button.x + button.w / 2, button.y + button.h / 2 + 1, button.label, &FreeSansBold9pt7b, text, fill,
+              MC_DATUM);
 }
 
 String renderKey() {
@@ -508,7 +514,7 @@ bool parseStatePayload(Stream &payload) {
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, payload, DeserializationOption::Filter(filter));
   if (error) {
-    state.error = String("JSON Fehler: ") + error.c_str();
+    state.error = String("JSON ERROR: ") + error.c_str();
     return false;
   }
 
@@ -542,24 +548,31 @@ bool parseStatePayload(Stream &payload) {
   state.gridPower = data["gridPower"] | (data["grid"]["power"] | 0.0f);
   state.evccOk = true;
   state.error = "";
+  consecutiveFetchFailures = 0;
   state.lastUpdate = millis();
   return true;
 }
 
+void markFetchFailure(const String &message) {
+  consecutiveFetchFailures++;
+  if (consecutiveFetchFailures >= MaxSilentFetchFailures || state.lastUpdate == 0) {
+    state.evccOk = false;
+    state.error = message;
+  }
+}
+
 bool fetchEvccState() {
   if (WiFi.status() != WL_CONNECTED) {
-    state.evccOk = false;
-    state.error = "WLAN nicht verbunden";
+    markFetchFailure("WLAN OFFLINE");
     return false;
   }
 
   HTTPClient http;
   http.setTimeout(EvccTimeoutMs);
   http.setReuse(false);
-  const String url = evccBaseUrl() + "/api/state";
+  const String url = evccBaseUrl() + EvccStateQuery;
   if (!http.begin(url)) {
-    state.evccOk = false;
-    state.error = "EVCC URL ungueltig";
+    markFetchFailure("EVCC URL ERROR");
     return false;
   }
   http.addHeader("Accept", "application/json");
@@ -568,8 +581,7 @@ bool fetchEvccState() {
 
   const int statusCode = http.GET();
   if (statusCode != HTTP_CODE_OK) {
-    state.evccOk = false;
-    state.error = "EVCC HTTP " + String(statusCode);
+    markFetchFailure("EVCC HTTP " + String(statusCode));
     http.end();
     return false;
   }
@@ -577,7 +589,9 @@ bool fetchEvccState() {
   WiFiClient &payload = http.getStream();
   const bool ok = parseStatePayload(payload);
   http.end();
-  state.evccOk = ok;
+  if (!ok) {
+    markFetchFailure(state.error);
+  }
   return ok;
 }
 
@@ -663,10 +677,10 @@ void handleTouch() {
     }
 
     tft.fillRect(12, 262, 216, 30, ColorWarn);
-    drawText(20, 273, String("Setze Modus: ") + button.label, ColorText, 1, ColorWarn);
-    setEvccMode(resolveMode(button.mode));
-    fetchEvccState();
-    updateConnectionReset();
+    drawText(20, 273, String("SET ") + button.label, ColorText, 1, ColorWarn);
+    if (setEvccMode(resolveMode(button.mode))) {
+      lastPoll = millis();
+    }
     render(true);
     return;
   }

@@ -8,7 +8,7 @@ Ein ESP32 Cheap Yellow Display (CYD / ESP32-2432S028R) sitzt neben der Garagen-W
 
 Der erste Stand nutzt die EVCC REST API:
 
-- Status lesen: `GET http://<evcc-host>:7070/api/state`
+- Status lesen: `GET http://<evcc-host>:7070/api/state?jq=...`
 - Modus setzen: `POST http://<evcc-host>:7070/api/loadpoints/<id>/mode/<mode>`
 
 Die EVCC-Dokumentation nennt die Modi:
@@ -18,7 +18,7 @@ Die EVCC-Dokumentation nennt die Modi:
 - `minpv`: sofort mit Mindestleistung, bei PV-Ueberschuss schneller
 - `now`: sofort mit maximal moeglicher Leistung
 
-Der Code verarbeitet sowohl das alte EVCC-JSON mit aeusserem `result`-Objekt als auch das neuere Format ohne diese Ebene.
+Der Statusabruf nutzt eine kompakte `jq`-Projektion und laedt nur die Felder, die auf dem Display gebraucht werden. Das reduziert die JSON-Groesse deutlich und vermeidet instabile Stream-Reads auf dem ESP32. Der Code verarbeitet trotzdem sowohl das alte EVCC-JSON mit aeusserem `result`-Objekt als auch das neuere Format ohne diese Ebene.
 
 MQTT bleibt eine gute spaetere Option, falls ohnehin ein Broker laeuft. Fuer den Start ist REST einfacher, weil der ESP32 nur EVCC erreichen muss.
 
