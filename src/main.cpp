@@ -33,11 +33,17 @@
 #ifndef APP_VERSION
 #define APP_VERSION "0.1.0-dev"
 #endif
+#ifndef DISPLAY_ROTATION
+#define DISPLAY_ROTATION 0
+#endif
+#ifndef TOUCH_ROTATION
+#define TOUCH_ROTATION 0
+#endif
 
 namespace {
 
-constexpr uint16_t ScreenW = 320;
-constexpr uint16_t ScreenH = 240;
+constexpr uint16_t ScreenW = 240;
+constexpr uint16_t ScreenH = 320;
 
 constexpr uint8_t TouchIrq = 36;
 constexpr uint8_t TouchMosi = 32;
@@ -54,15 +60,16 @@ constexpr uint32_t PollIntervalMs = 5000;
 constexpr uint32_t WifiRetryMs = 10000;
 constexpr uint32_t TouchDebounceMs = 450;
 
-constexpr uint16_t ColorBg = TFT_BLACK;
-constexpr uint16_t ColorPanel = 0x18E3;
-constexpr uint16_t ColorPanel2 = 0x2945;
-constexpr uint16_t ColorText = TFT_WHITE;
-constexpr uint16_t ColorMuted = 0xBDF7;
-constexpr uint16_t ColorOk = 0x45E7;
-constexpr uint16_t ColorWarn = 0xFDC0;
-constexpr uint16_t ColorError = 0xF986;
-constexpr uint16_t ColorBlue = 0x2D7F;
+constexpr uint16_t ColorBg = 0xF79F;
+constexpr uint16_t ColorCard = TFT_WHITE;
+constexpr uint16_t ColorLine = 0xDEFB;
+constexpr uint16_t ColorSoft = 0xEF5D;
+constexpr uint16_t ColorText = 0x2927;
+constexpr uint16_t ColorMuted = 0x8C92;
+constexpr uint16_t ColorEvcc = 0x16E9;
+constexpr uint16_t ColorEvccDark = 0x0605;
+constexpr uint16_t ColorWarn = 0xFEA0;
+constexpr uint16_t ColorError = 0xF9C7;
 
 struct EvccState {
   String title = WALLBOX_LABEL;
@@ -105,10 +112,10 @@ AppConfig appConfig;
 EvccState state;
 
 ModeButton buttons[] = {
-    {8, 136, 148, 42, "Aus", "off", ColorError},
-    {164, 136, 148, 42, "PV", "pv", ColorOk},
-    {8, 188, 148, 42, "Min+PV", "minpv", ColorWarn},
-    {164, 188, 148, 42, "Schnell", "now", ColorBlue},
+    {18, 166, 50, 24, "Aus", "off", ColorError},
+    {68, 166, 42, 24, "PV", "pv", ColorEvcc},
+    {110, 166, 60, 24, "Min+PV", "minpv", ColorEvccDark},
+    {170, 166, 52, 24, "Schnell", "now", ColorWarn},
 };
 
 uint32_t lastPoll = 0;
@@ -150,33 +157,35 @@ String formatPower(float watts) {
   return String(buffer);
 }
 
-void drawText(int16_t x, int16_t y, const String &text, uint16_t color, uint8_t size = 1) {
-  tft.setTextColor(color, ColorBg);
+void drawText(int16_t x, int16_t y, const String &text, uint16_t color, uint8_t size = 1, uint16_t bg = ColorBg) {
+  tft.setTextColor(color, bg);
   tft.setTextSize(size);
   tft.setCursor(x, y);
   tft.print(text);
 }
 
+void drawCard(int16_t x, int16_t y, int16_t w, int16_t h) {
+  tft.fillRoundRect(x, y, w, h, 16, ColorCard);
+}
+
 void drawStatusLine(int16_t y, const String &label, const String &value, uint16_t valueColor = ColorText) {
   tft.setTextSize(1);
-  tft.setTextColor(ColorMuted, ColorBg);
-  tft.setCursor(12, y);
+  tft.setTextColor(ColorMuted, ColorCard);
+  tft.setCursor(24, y);
   tft.print(label);
-  tft.setTextColor(valueColor, ColorBg);
-  tft.setCursor(112, y);
+  tft.setTextColor(valueColor, ColorCard);
+  tft.setCursor(130, y);
   tft.print(value);
 }
 
 void drawButton(const ModeButton &button) {
   const bool active = state.mode == button.mode;
-  const uint16_t fill = active ? button.color : ColorPanel;
-  const uint16_t border = active ? TFT_WHITE : ColorPanel2;
-  const uint16_t text = active ? TFT_BLACK : ColorText;
+  const uint16_t fill = active ? ColorEvccDark : ColorCard;
+  const uint16_t text = active ? TFT_WHITE : ColorText;
 
-  tft.fillRoundRect(button.x, button.y, button.w, button.h, 6, fill);
-  tft.drawRoundRect(button.x, button.y, button.w, button.h, 6, border);
+  tft.fillRoundRect(button.x, button.y, button.w, button.h, 11, fill);
   tft.setTextColor(text, fill);
-  tft.setTextSize(2);
+  tft.setTextSize(1);
   tft.setTextDatum(MC_DATUM);
   tft.drawString(button.label, button.x + button.w / 2, button.y + button.h / 2);
   tft.setTextDatum(TL_DATUM);
@@ -185,41 +194,47 @@ void drawButton(const ModeButton &button) {
 void render() {
   tft.fillScreen(ColorBg);
 
-  tft.fillRect(0, 0, ScreenW, 34, ColorPanel);
-  tft.setTextColor(ColorText, ColorPanel);
-  tft.setTextSize(2);
-  tft.setCursor(10, 9);
-  tft.print(state.title);
-
   const bool wifiOk = WiFi.status() == WL_CONNECTED;
-  tft.setTextSize(1);
-  tft.setTextColor(wifiOk && state.evccOk ? ColorOk : ColorWarn, ColorPanel);
-  tft.setCursor(228, 12);
-  tft.print(wifiOk ? (state.evccOk ? "online" : "wifi") : "offline");
 
-  drawStatusLine(44, "Modus", modeLabel(state.mode), ColorOk);
-  drawStatusLine(60, "Auto", state.connected ? "verbunden" : "nicht verbunden", state.connected ? ColorOk : ColorMuted);
-  drawStatusLine(76, "Laedt", boolLabel(state.charging), state.charging ? ColorOk : ColorMuted);
-  drawStatusLine(92, "Leistung", formatPower(state.chargePower));
+  drawText(14, 16, state.title.substring(0, 12), ColorText, 2);
+  drawText(168, 18, wifiOk ? (state.evccOk ? "online" : "wifi") : "offline", wifiOk && state.evccOk ? ColorEvcc : ColorWarn);
+  drawText(14, 42, String("EVCC LP ") + String(appConfig.loadpointId), ColorMuted);
 
-  String energyLine = "PV " + formatPower(state.pvPower) + "  Netz " + formatPower(state.gridPower);
-  drawText(12, 112, energyLine, ColorMuted);
+  drawCard(12, 62, 216, 78);
+  drawText(24, 78, "LEISTUNG", ColorMuted, 1, ColorCard);
+  drawText(24, 96, formatPower(state.chargePower), ColorText, 2, ColorCard);
+  drawText(148, 78, "MODUS", ColorMuted, 1, ColorCard);
+  drawText(148, 96, modeLabel(state.mode), ColorText, 1, ColorCard);
+  tft.fillRoundRect(24, 122, 84, 8, 4, ColorEvcc);
+  tft.fillRoundRect(108, 122, 96, 8, 4, ColorWarn);
 
-  if (state.vehicleSoc >= 0) {
-    String socLine = "SoC " + String(state.vehicleSoc) + "%";
-    if (state.vehicle.length()) {
-      socLine += "  " + state.vehicle;
-    }
-    drawText(190, 44, socLine, ColorMuted);
-  }
+  drawCard(12, 150, 216, 144);
+  tft.drawRoundRect(18, 166, 204, 24, 12, ColorLine);
 
   for (const auto &button : buttons) {
     drawButton(button);
   }
 
+  tft.drawFastHLine(12, 200, 216, ColorLine);
+  drawText(24, 214, state.connected ? "Fahrzeug verbunden" : "Kein Fahrzeug", ColorText, 2, ColorCard);
+  drawText(24, 238, state.charging ? "Laedt gerade." : "Nicht verbunden.", state.charging ? ColorEvcc : ColorMuted, 1, ColorCard);
+
+  String soc = state.vehicleSoc >= 0 ? String(state.vehicleSoc) + "%" : "-";
+  drawText(24, 270, "PV", ColorMuted);
+  drawText(24, 286, formatPower(state.pvPower), ColorEvcc);
+  drawText(96, 270, "NETZ", ColorMuted);
+  drawText(96, 286, formatPower(state.gridPower), ColorText);
+  drawText(174, 270, "SOC", ColorMuted);
+  drawText(174, 286, soc, ColorText);
+
+  tft.fillRect(0, 304, ScreenW, 16, ColorCard);
+  tft.drawFastHLine(0, 304, ScreenW, ColorLine);
+  tft.fillRect(80, 304, 80, 2, ColorEvcc);
+  drawText(102, 310, "Laden", ColorEvcc, 1, ColorCard);
+
   if (!state.evccOk && state.error.length()) {
-    tft.fillRect(0, 231, ScreenW, 9, ColorBg);
-    drawText(8, 231, state.error.substring(0, 44), ColorError);
+    tft.fillRoundRect(12, 262, 216, 30, 8, ColorError);
+    drawText(20, 273, state.error.substring(0, 28), TFT_WHITE, 1, ColorError);
   }
 }
 
@@ -250,14 +265,15 @@ void saveAppConfig() {
 
 void showSetupPortalInfo() {
   tft.fillScreen(ColorBg);
-  drawText(12, 20, "Setup", ColorText, 2);
-  drawText(12, 56, "Mit WLAN verbinden:", ColorMuted);
-  drawText(12, 76, "EVCC-Switch", ColorOk, 2);
-  drawText(12, 108, "Passwort:", ColorMuted);
-  drawText(12, 128, "evccswitch", ColorOk, 2);
-  drawText(12, 164, "Dann EVCC-IP und", ColorMuted);
-  drawText(12, 180, "Loadpoint eintragen.", ColorMuted);
-  drawText(12, 216, String("Version ") + APP_VERSION, ColorMuted);
+  drawText(14, 18, "SETUP", ColorText, 2);
+  drawCard(12, 58, 216, 172);
+  drawText(24, 78, "Mit WLAN verbinden", ColorMuted, 1, ColorCard);
+  drawText(24, 100, "EVCC-Switch", ColorText, 2, ColorCard);
+  drawText(24, 134, "Passwort", ColorMuted, 1, ColorCard);
+  drawText(24, 154, "evccswitch", ColorEvcc, 2, ColorCard);
+  drawText(24, 194, "Dann EVCC-IP und", ColorMuted, 1, ColorCard);
+  drawText(24, 210, "Loadpoint eintragen.", ColorMuted, 1, ColorCard);
+  drawText(14, 286, String("Version ") + APP_VERSION, ColorMuted);
 }
 
 void resetConfigurationIfRequested() {
@@ -268,8 +284,9 @@ void resetConfigurationIfRequested() {
   }
 
   tft.fillScreen(ColorBg);
-  drawText(12, 40, "Reset gedrueckt", ColorWarn, 2);
-  drawText(12, 80, "Konfiguration wird geloescht", ColorMuted);
+  drawText(14, 40, "RESET", ColorWarn, 2);
+  drawText(14, 80, "Konfiguration", ColorMuted);
+  drawText(14, 96, "wird geloescht", ColorMuted);
 
   WiFiManager wm;
   wm.resetSettings();
@@ -450,8 +467,8 @@ void handleTouch() {
       continue;
     }
 
-    tft.fillRect(0, 112, ScreenW, 16, ColorBg);
-    drawText(12, 112, String("Setze Modus: ") + button.label, ColorWarn);
+    tft.fillRoundRect(12, 262, 216, 30, 8, ColorWarn);
+    drawText(20, 273, String("Setze Modus: ") + button.label, ColorText, 1, ColorWarn);
     setEvccMode(button.mode);
     fetchEvccState();
     render();
@@ -469,12 +486,12 @@ void setup() {
   digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
 
   tft.init();
-  tft.setRotation(1);
+  tft.setRotation(DISPLAY_ROTATION);
   tft.fillScreen(ColorBg);
 
   touchSpi.begin(TouchClk, TouchMiso, TouchMosi, TouchCs);
   touch.begin(touchSpi);
-  touch.setRotation(1);
+  touch.setRotation(TOUCH_ROTATION);
 
   loadAppConfig();
   resetConfigurationIfRequested();

@@ -8,6 +8,7 @@ Touch-Bedienteil fuer eine EVCC-gesteuerte Wallbox auf einem ESP32 Cheap Yellow 
 - wird nach dem Flashen ueber ein Setup-Portal konfiguriert
 - liest EVCC per lokaler REST API
 - nutzt genau einen konfigurierten EVCC-Loadpoint, z. B. die Garage
+- ist fuer Hochkant-Montage mit USB unten ausgelegt
 - zeigt Ladezustand, Modus, Ladeleistung, PV-Leistung und Netzleistung
 - schaltet die EVCC-Modi `off`, `pv`, `minpv` und `now`
 

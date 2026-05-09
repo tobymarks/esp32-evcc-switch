@@ -43,6 +43,8 @@ Startbildschirm:
 - Ladeleistung, Netzbezug/Einspeisung, PV-Leistung
 - vier grosse Touch-Flaechen: Aus, PV, Min+PV, Schnell
 
+Das CYD wird hochkant mit USB-Anschluss unten montiert. Die Firmware nutzt dafuer standardmaessig `DISPLAY_ROTATION=0` und `TOUCH_ROTATION=0`. Falls eine CYD-Revision anders ausgerichtet ist, koennen diese Defines in `platformio.ini` oder einer lokalen `Config.h` angepasst werden.
+
 ## Technische Basis
 
 - PlatformIO

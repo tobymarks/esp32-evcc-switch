@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ESP32 EVCC Switch Installer</title>
+    <title>EVC32 EVCC Switch Installer</title>
     <meta
       name="description"
-      content="Firmware installer for the ESP32 EVCC Switch on the Cheap Yellow Display."
+      content="Firmware installer for the EVC32 EVCC Switch on the ESP32 Cheap Yellow Display."
     />
     <link rel="stylesheet" href="styles.css" />
     <script
@@ -16,39 +16,80 @@
   </head>
   <body>
     <main>
-      <section class="hero" aria-labelledby="title">
-        <p class="eyebrow">ESP32 Cheap Yellow Display</p>
-        <h1 id="title">EVCC Switch Installer</h1>
-        <p class="lead">
-          Flash the wallbox mode switch firmware directly from Chrome or Edge on Windows, macOS or Linux.
-        </p>
+      <nav class="topbar" aria-label="Projektlinks">
+        <a class="brand" href="https://evcc.io/">
+          <span aria-hidden="true">↯</span>
+          <strong>evcc</strong>
+        </a>
+        <div class="links">
+          <a href="https://evcc.io/">EVCC</a>
+          <a href="https://github.com/tobymarks/evc32-evcc-switch">GitHub</a>
+        </div>
+      </nav>
 
-        <div class="installer">
-          <esp-web-install-button manifest="firmware/manifest.json"></esp-web-install-button>
+      <section class="hero" aria-labelledby="title">
+        <div class="copy">
+          <p class="eyebrow">ESP32 Cheap Yellow Display</p>
+          <h1 id="title">EVC32 EVCC Switch</h1>
+          <p class="lead">
+            Browser-Installer fuer das kleine Touch-Bedienteil neben deiner Wallbox.
+          </p>
+
+          <div class="installer-card">
+            <div>
+              <p class="label">Firmware</p>
+              <p class="value">CYD Portrait</p>
+            </div>
+            <esp-web-install-button manifest="firmware/manifest.json"></esp-web-install-button>
+          </div>
+        </div>
+
+        <div class="device" aria-hidden="true">
+          <div class="screen">
+            <div class="screen-head">
+              <strong>GARAGE</strong>
+              <span>online</span>
+            </div>
+            <div class="mini-card">
+              <small>LEISTUNG</small>
+              <strong>0,0 kW</strong>
+              <div class="bar">
+                <i></i>
+                <b></b>
+              </div>
+            </div>
+            <div class="mini-card">
+              <div class="segmented">
+                <span>Aus</span>
+                <span>PV</span>
+                <strong>Min+PV</strong>
+                <span>Schnell</span>
+              </div>
+              <h2>Kein Fahrzeug</h2>
+              <p>Nicht verbunden.</p>
+            </div>
+            <footer>Laden</footer>
+          </div>
         </div>
       </section>
 
       <section class="steps" aria-label="Setup steps">
         <article>
           <span>1</span>
-          <h2>Connect</h2>
-          <p>Plug the ESP32 CYD into USB and use a Chromium browser.</p>
+          <h2>Verbinden</h2>
+          <p>ESP32 CYD per USB anschliessen und Chrome oder Edge oeffnen.</p>
         </article>
         <article>
           <span>2</span>
-          <h2>Flash</h2>
-          <p>Start the installer and choose the serial port of the ESP32.</p>
+          <h2>Flashen</h2>
+          <p>Installer starten und den seriellen Port des ESP32 auswaehlen.</p>
         </article>
         <article>
           <span>3</span>
-          <h2>Configure</h2>
-          <p>Join the setup Wi-Fi <strong>EVCC-Switch</strong> and enter EVCC host, port and loadpoint.</p>
+          <h2>Einrichten</h2>
+          <p>Setup-WLAN <strong>EVCC-Switch</strong> nutzen und EVCC-IP, Port und Ladepunkt eintragen.</p>
         </article>
       </section>
-
-      <footer>
-        <a href="https://github.com/tobymarks/evc32-evcc-switch">GitHub repository</a>
-      </footer>
     </main>
   </body>
 </html>
