@@ -10,3 +10,5 @@ This project follows semantic versioning once the first stable release is publis
 - REST integration for EVCC `/api/state` and loadpoint mode updates.
 - Runtime setup portal for Wi-Fi, EVCC host, port, loadpoint ID and display label.
 - GitHub Pages web installer scaffold using ESP Web Tools.
+- Stream and filter the large EVCC `/api/state` response to avoid incomplete JSON reads on ESP32.
+- Reduce display flicker by redrawing only changed TFT regions after the initial layout render.

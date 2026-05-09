@@ -59,6 +59,7 @@ constexpr int TouchMaxY = 3800;
 constexpr uint32_t PollIntervalMs = 5000;
 constexpr uint32_t WifiRetryMs = 10000;
 constexpr uint32_t TouchDebounceMs = 450;
+constexpr uint32_t EvccTimeoutMs = 8000;
 
 constexpr uint16_t ColorBg = 0xF79F;
 constexpr uint16_t ColorCard = TFT_WHITE;
@@ -121,6 +122,13 @@ ModeButton buttons[] = {
 uint32_t lastPoll = 0;
 uint32_t lastWifiAttempt = 0;
 uint32_t lastTouch = 0;
+String lastRenderKey;
+String lastTopKey;
+String lastPowerKey;
+String lastModeKey;
+String lastVehicleKey;
+String lastMetricsKey;
+String lastErrorKey;
 
 String evccBaseUrl() {
   return String("http://") + appConfig.evccHost + ":" + String(appConfig.evccPort);
@@ -191,46 +199,111 @@ void drawButton(const ModeButton &button) {
   tft.setTextDatum(TL_DATUM);
 }
 
-void render() {
+String renderKey() {
+  return state.title + "|" + state.mode + "|" + String(state.connected) + "|" + String(state.charging) + "|" +
+         String(static_cast<int>(state.chargePower / 50.0f)) + "|" + String(static_cast<int>(state.pvPower / 100.0f)) +
+         "|" + String(static_cast<int>(state.gridPower / 100.0f)) + "|" + String(state.vehicleSoc) + "|" +
+         String(state.evccOk) + "|" + state.error;
+}
+
+void clearCardArea(int16_t x, int16_t y, int16_t w, int16_t h) {
+  tft.fillRect(x, y, w, h, ColorCard);
+}
+
+void drawStaticLayout() {
   tft.fillScreen(ColorBg);
-
-  const bool wifiOk = WiFi.status() == WL_CONNECTED;
-
-  drawText(14, 16, state.title.substring(0, 12), ColorText, 2);
-  drawText(168, 18, wifiOk ? (state.evccOk ? "online" : "wifi") : "offline", wifiOk && state.evccOk ? ColorEvcc : ColorWarn);
-  drawText(14, 42, String("EVCC LP ") + String(appConfig.loadpointId), ColorMuted);
 
   drawCard(12, 62, 216, 78);
   drawText(24, 78, "LEISTUNG", ColorMuted, 1, ColorCard);
-  drawText(24, 96, formatPower(state.chargePower), ColorText, 2, ColorCard);
   drawText(148, 78, "MODUS", ColorMuted, 1, ColorCard);
-  drawText(148, 96, modeLabel(state.mode), ColorText, 1, ColorCard);
-  tft.fillRoundRect(24, 122, 84, 8, 4, ColorEvcc);
-  tft.fillRoundRect(108, 122, 96, 8, 4, ColorWarn);
 
   drawCard(12, 150, 216, 144);
   tft.drawRoundRect(18, 166, 204, 24, 12, ColorLine);
-
-  for (const auto &button : buttons) {
-    drawButton(button);
-  }
-
   tft.drawFastHLine(12, 200, 216, ColorLine);
-  drawText(24, 214, state.connected ? "Fahrzeug verbunden" : "Kein Fahrzeug", ColorText, 2, ColorCard);
-  drawText(24, 238, state.charging ? "Laedt gerade." : "Nicht verbunden.", state.charging ? ColorEvcc : ColorMuted, 1, ColorCard);
-
-  String soc = state.vehicleSoc >= 0 ? String(state.vehicleSoc) + "%" : "-";
-  drawText(24, 270, "PV", ColorMuted);
-  drawText(24, 286, formatPower(state.pvPower), ColorEvcc);
-  drawText(96, 270, "NETZ", ColorMuted);
-  drawText(96, 286, formatPower(state.gridPower), ColorText);
-  drawText(174, 270, "SOC", ColorMuted);
-  drawText(174, 286, soc, ColorText);
 
   tft.fillRect(0, 304, ScreenW, 16, ColorCard);
   tft.drawFastHLine(0, 304, ScreenW, ColorLine);
   tft.fillRect(80, 304, 80, 2, ColorEvcc);
   drawText(102, 310, "Laden", ColorEvcc, 1, ColorCard);
+}
+
+void render(bool full = false) {
+  const String key = renderKey();
+  if (!full && key == lastRenderKey) {
+    return;
+  }
+  lastRenderKey = key;
+
+  if (full) {
+    lastTopKey = "";
+    lastPowerKey = "";
+    lastModeKey = "";
+    lastVehicleKey = "";
+    lastMetricsKey = "";
+    lastErrorKey = "";
+    drawStaticLayout();
+  }
+
+  const bool wifiOk = WiFi.status() == WL_CONNECTED;
+
+  const String topKey = state.title + "|" + String(wifiOk) + "|" + String(state.evccOk);
+  if (full || topKey != lastTopKey) {
+    lastTopKey = topKey;
+    tft.fillRect(0, 0, ScreenW, 58, ColorBg);
+    drawText(14, 16, state.title.substring(0, 12), ColorText, 2);
+    drawText(168, 18, wifiOk ? (state.evccOk ? "online" : "wifi") : "offline", wifiOk && state.evccOk ? ColorEvcc : ColorWarn);
+    drawText(14, 42, String("EVCC LP ") + String(appConfig.loadpointId), ColorMuted);
+  }
+
+  const String powerKey = formatPower(state.chargePower) + "|" + modeLabel(state.mode);
+  if (full || powerKey != lastPowerKey) {
+    lastPowerKey = powerKey;
+    clearCardArea(24, 96, 88, 22);
+    drawText(24, 96, formatPower(state.chargePower), ColorText, 2, ColorCard);
+    clearCardArea(148, 96, 70, 12);
+    drawText(148, 96, modeLabel(state.mode), ColorText, 1, ColorCard);
+    tft.fillRect(24, 122, 180, 8, ColorCard);
+    tft.fillRoundRect(24, 122, 84, 8, 4, ColorEvcc);
+    tft.fillRoundRect(108, 122, 96, 8, 4, ColorWarn);
+  }
+
+  if (full || state.mode != lastModeKey) {
+    lastModeKey = state.mode;
+    tft.fillRoundRect(19, 167, 202, 22, 11, ColorCard);
+    for (const auto &button : buttons) {
+      drawButton(button);
+    }
+  }
+
+  const String vehicleKey = String(state.connected) + "|" + String(state.charging) + "|" + state.vehicle;
+  if (full || vehicleKey != lastVehicleKey) {
+    lastVehicleKey = vehicleKey;
+    clearCardArea(24, 214, 190, 36);
+    drawText(24, 214, state.connected ? "Fahrzeug verbunden" : "Kein Fahrzeug", ColorText, 2, ColorCard);
+    drawText(24, 238, state.charging ? "Laedt gerade." : "Nicht verbunden.", state.charging ? ColorEvcc : ColorMuted, 1, ColorCard);
+  }
+
+  const String errorKey = state.evccOk ? "" : state.error;
+  if (full || errorKey != lastErrorKey) {
+    if (lastErrorKey.length()) {
+      clearCardArea(12, 262, 216, 32);
+      lastMetricsKey = "";
+    }
+    lastErrorKey = errorKey;
+  }
+
+  String soc = state.vehicleSoc >= 0 ? String(state.vehicleSoc) + "%" : "-";
+  const String metricsKey = formatPower(state.pvPower) + "|" + formatPower(state.gridPower) + "|" + soc;
+  if (full || metricsKey != lastMetricsKey) {
+    lastMetricsKey = metricsKey;
+    clearCardArea(24, 270, 190, 24);
+    drawText(24, 270, "PV", ColorMuted, 1, ColorCard);
+    drawText(24, 286, formatPower(state.pvPower), ColorEvcc, 1, ColorCard);
+    drawText(96, 270, "NETZ", ColorMuted, 1, ColorCard);
+    drawText(96, 286, formatPower(state.gridPower), ColorText, 1, ColorCard);
+    drawText(174, 270, "SOC", ColorMuted, 1, ColorCard);
+    drawText(174, 286, soc, ColorText, 1, ColorCard);
+  }
 
   if (!state.evccOk && state.error.length()) {
     tft.fillRoundRect(12, 262, 216, 30, 8, ColorError);
@@ -333,9 +406,35 @@ void setupNetwork() {
   saveAppConfig();
 }
 
-bool parseStatePayload(const String &payload) {
+bool parseStatePayload(Stream &payload) {
+  JsonDocument filter;
+  filter["result"]["loadpoints"][0]["title"] = true;
+  filter["result"]["loadpoints"][0]["mode"] = true;
+  filter["result"]["loadpoints"][0]["vehicleTitle"] = true;
+  filter["result"]["loadpoints"][0]["connected"] = true;
+  filter["result"]["loadpoints"][0]["charging"] = true;
+  filter["result"]["loadpoints"][0]["enabled"] = true;
+  filter["result"]["loadpoints"][0]["vehicleSoc"] = true;
+  filter["result"]["loadpoints"][0]["chargePower"] = true;
+  filter["result"]["pvPower"] = true;
+  filter["result"]["gridPower"] = true;
+  filter["result"]["grid"]["power"] = true;
+  filter["result"]["site"]["pvPower"] = true;
+  filter["loadpoints"][0]["title"] = true;
+  filter["loadpoints"][0]["mode"] = true;
+  filter["loadpoints"][0]["vehicleTitle"] = true;
+  filter["loadpoints"][0]["connected"] = true;
+  filter["loadpoints"][0]["charging"] = true;
+  filter["loadpoints"][0]["enabled"] = true;
+  filter["loadpoints"][0]["vehicleSoc"] = true;
+  filter["loadpoints"][0]["chargePower"] = true;
+  filter["pvPower"] = true;
+  filter["gridPower"] = true;
+  filter["grid"]["power"] = true;
+  filter["site"]["pvPower"] = true;
+
   JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, payload);
+  DeserializationError error = deserializeJson(doc, payload, DeserializationOption::Filter(filter));
   if (error) {
     state.error = String("JSON Fehler: ") + error.c_str();
     return false;
@@ -383,13 +482,17 @@ bool fetchEvccState() {
   }
 
   HTTPClient http;
-  http.setTimeout(2500);
+  http.setTimeout(EvccTimeoutMs);
+  http.setReuse(false);
   const String url = evccBaseUrl() + "/api/state";
   if (!http.begin(url)) {
     state.evccOk = false;
     state.error = "EVCC URL ungueltig";
     return false;
   }
+  http.addHeader("Accept", "application/json");
+  http.addHeader("Accept-Encoding", "identity");
+  http.useHTTP10(true);
 
   const int statusCode = http.GET();
   if (statusCode != HTTP_CODE_OK) {
@@ -399,9 +502,9 @@ bool fetchEvccState() {
     return false;
   }
 
-  const String payload = http.getString();
-  http.end();
+  WiFiClient &payload = http.getStream();
   const bool ok = parseStatePayload(payload);
+  http.end();
   state.evccOk = ok;
   return ok;
 }
@@ -414,7 +517,8 @@ bool setEvccMode(const char *mode) {
   }
 
   HTTPClient http;
-  http.setTimeout(2500);
+  http.setTimeout(EvccTimeoutMs);
+  http.setReuse(false);
   const String url = evccBaseUrl() + "/api/loadpoints/" + String(appConfig.loadpointId) + "/mode/" + mode;
   if (!http.begin(url)) {
     state.error = "EVCC URL ungueltig";
@@ -471,7 +575,7 @@ void handleTouch() {
     drawText(20, 273, String("Setze Modus: ") + button.label, ColorText, 1, ColorWarn);
     setEvccMode(button.mode);
     fetchEvccState();
-    render();
+    render(true);
     return;
   }
 }
@@ -497,7 +601,7 @@ void setup() {
   resetConfigurationIfRequested();
   setupNetwork();
   fetchEvccState();
-  render();
+  render(true);
 }
 
 void loop() {
