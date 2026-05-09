@@ -14,5 +14,8 @@
 // EVCC loadpoint IDs start at 1. Set this to the garage loadpoint.
 #define EVCC_LOADPOINT_ID 1
 
+// Standard mode behind the "Standard" button: "minpv" or "pv".
+#define EVCC_STANDARD_MODE "minpv"
+
 // Optional label shown on the display.
 #define WALLBOX_LABEL "Garage"

@@ -30,6 +30,9 @@
 #ifndef WALLBOX_LABEL
 #define WALLBOX_LABEL "Garage"
 #endif
+#ifndef EVCC_STANDARD_MODE
+#define EVCC_STANDARD_MODE "minpv"
+#endif
 #ifndef APP_VERSION
 #define APP_VERSION "0.1.0-dev"
 #endif
@@ -96,6 +99,7 @@ struct AppConfig {
   uint16_t evccPort = EVCC_PORT;
   uint8_t loadpointId = EVCC_LOADPOINT_ID;
   char label[32] = WALLBOX_LABEL;
+  char standardMode[8] = EVCC_STANDARD_MODE;
 };
 
 struct ModeButton {
@@ -116,10 +120,9 @@ AppConfig appConfig;
 EvccState state;
 
 ModeButton buttons[] = {
-    {12, 154, 52, 34, "Aus", "off", ColorError},
-    {64, 154, 42, 34, "PV", "pv", ColorEvcc},
-    {106, 154, 62, 34, "Min+PV", "minpv", ColorEvccDark},
-    {168, 154, 60, 34, "Schnell", "now", ColorWarn},
+    {12, 106, 216, 50, "STANDARD", "std", ColorEvccDark},
+    {12, 166, 104, 50, "AUS", "off", ColorError},
+    {124, 166, 104, 50, "SCHNELL", "now", ColorWarn},
 };
 
 uint32_t lastPoll = 0;
@@ -132,6 +135,8 @@ String lastModeKey;
 String lastVehicleKey;
 String lastMetricsKey;
 String lastErrorKey;
+bool lastConnected = false;
+bool connectionStateKnown = false;
 
 String evccBaseUrl() {
   return String("http://") + appConfig.evccHost + ":" + String(appConfig.evccPort);
@@ -151,6 +156,25 @@ String modeLabel(const String &mode) {
     return "Schnell";
   }
   return mode.length() ? mode : "-";
+}
+
+bool isStandardMode(const String &mode) {
+  return mode == "pv" || mode == "minpv";
+}
+
+void setStandardModeValue(const char *value) {
+  if (strcmp(value, "pv") == 0) {
+    strlcpy(appConfig.standardMode, "pv", sizeof(appConfig.standardMode));
+    return;
+  }
+  strlcpy(appConfig.standardMode, "minpv", sizeof(appConfig.standardMode));
+}
+
+const char *resolveMode(const char *mode) {
+  if (strcmp(mode, "std") == 0) {
+    return appConfig.standardMode;
+  }
+  return mode;
 }
 
 String boolLabel(bool value) {
@@ -193,6 +217,11 @@ void drawCard(int16_t x, int16_t y, int16_t w, int16_t h) {
   tft.drawRect(x, y, w, h, ColorLine);
 }
 
+void drawFrame(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color = ColorLine) {
+  tft.drawRect(x, y, w, h, color);
+  tft.drawRect(x + 1, y + 1, w - 2, h - 2, color);
+}
+
 void drawStatusLine(int16_t y, const String &label, const String &value, uint16_t valueColor = ColorText) {
   tft.setTextSize(1);
   tft.setTextColor(ColorMuted, ColorCard);
@@ -204,13 +233,15 @@ void drawStatusLine(int16_t y, const String &label, const String &value, uint16_
 }
 
 void drawButton(const ModeButton &button) {
-  const bool active = state.mode == button.mode;
+  const bool standardButton = strcmp(button.mode, "std") == 0;
+  const bool active = standardButton ? isStandardMode(state.mode) : state.mode == button.mode;
   const uint16_t fill = active ? ColorEvccDark : ColorCard;
   const uint16_t text = active ? TFT_WHITE : ColorText;
+  const uint16_t frame = active ? ColorEvccDark : ColorLine;
 
   tft.fillRect(button.x, button.y, button.w, button.h, fill);
-  tft.drawRect(button.x, button.y, button.w, button.h, active ? ColorEvccDark : ColorLine);
-  drawGfxText(button.x + button.w / 2, button.y + 8, button.label, &FreeSansBold9pt7b, text, fill, TC_DATUM);
+  drawFrame(button.x, button.y, button.w, button.h, frame);
+  drawGfxText(button.x + button.w / 2, button.y + 17, button.label, &FreeSansBold9pt7b, text, fill, MC_DATUM);
 }
 
 String renderKey() {
@@ -227,19 +258,18 @@ void clearCardArea(int16_t x, int16_t y, int16_t w, int16_t h) {
 void drawStaticLayout() {
   tft.fillScreen(ColorBg);
 
-  tft.fillRect(0, 56, ScreenW, 2, ColorText);
+  tft.fillRect(0, 46, ScreenW, 2, ColorText);
 
-  drawCard(12, 66, 216, 72);
-  tft.drawFastVLine(120, 66, 72, ColorLine);
-  drawText(22, 78, "LEISTUNG", ColorMuted, 1, ColorCard);
-  drawText(132, 78, "MODUS", ColorMuted, 1, ColorCard);
+  drawCard(12, 56, 216, 34);
+  tft.drawFastVLine(84, 56, 34, ColorLine);
+  tft.drawFastVLine(156, 56, 34, ColorLine);
 
-  tft.drawRect(12, 154, 216, 34, ColorLine);
+  drawText(12, 94, "MODUS WAEHLEN", ColorMuted);
 
-  drawCard(12, 204, 216, 90);
-  tft.drawFastHLine(12, 248, 216, ColorLine);
-  tft.drawFastVLine(84, 248, 46, ColorLine);
-  tft.drawFastVLine(156, 248, 46, ColorLine);
+  drawCard(12, 226, 216, 68);
+  tft.drawFastHLine(12, 258, 216, ColorLine);
+  tft.drawFastVLine(84, 258, 36, ColorLine);
+  tft.drawFastVLine(156, 258, 36, ColorLine);
 
   tft.fillRect(0, 304, ScreenW, 16, ColorCard);
   tft.drawFastHLine(0, 304, ScreenW, ColorLine);
@@ -269,27 +299,32 @@ void render(bool full = false) {
   const String topKey = state.title + "|" + String(wifiOk) + "|" + String(state.evccOk);
   if (full || topKey != lastTopKey) {
     lastTopKey = topKey;
-    tft.fillRect(0, 0, ScreenW, 58, ColorBg);
-    drawGfxText(12, 9, state.title.substring(0, 10), &FreeSansBold18pt7b, ColorText);
-    drawText(14, 43, String("EVCC LP ") + String(appConfig.loadpointId), ColorMuted);
-    drawText(178, 43, wifiOk ? (state.evccOk ? "ONLINE" : "WIFI") : "OFFLINE", wifiOk && state.evccOk ? ColorEvccDark : ColorWarn);
+    tft.fillRect(0, 0, ScreenW, 46, ColorBg);
+    drawGfxText(12, 8, state.title.substring(0, 11), &FreeSansBold12pt7b, ColorText);
+    drawText(14, 34, String("LP ") + String(appConfig.loadpointId), ColorMuted);
+    drawText(178, 34, wifiOk ? (state.evccOk ? "ONLINE" : "WIFI") : "OFFLINE", wifiOk && state.evccOk ? ColorEvccDark : ColorWarn);
   }
 
-  const String powerKey = formatPower(state.chargePower) + "|" + modeLabel(state.mode);
+  const String powerKey = formatPower(state.chargePower) + "|" + modeLabel(state.mode) + "|" + String(state.connected) + "|" +
+                          String(state.charging);
   if (full || powerKey != lastPowerKey) {
     lastPowerKey = powerKey;
-    clearCardArea(22, 92, 86, 28);
-    drawGfxText(22, 91, formatPower(state.chargePower), &FreeSansBold12pt7b, ColorText, ColorCard);
-    clearCardArea(132, 92, 84, 28);
-    drawGfxText(132, 93, modeLabel(state.mode), &FreeSans9pt7b, ColorText, ColorCard);
-    tft.fillRect(22, 124, 184, 5, ColorCard);
-    tft.fillRect(22, 124, 86, 5, ColorEvcc);
-    tft.fillRect(108, 124, 98, 5, ColorWarn);
+    clearCardArea(14, 58, 212, 30);
+    drawText(22, 62, "POWER", ColorMuted, 1, ColorCard);
+    drawText(22, 76, formatPower(state.chargePower), ColorText, 1, ColorCard);
+    drawText(94, 62, "MODE", ColorMuted, 1, ColorCard);
+    drawText(94, 76, isStandardMode(state.mode) ? "Standard" : modeLabel(state.mode), ColorText, 1, ColorCard);
+    drawText(166, 62, "AUTO", ColorMuted, 1, ColorCard);
+    const String carState = state.connected ? (state.charging ? "LOAD" : "READY") : "OFF";
+    drawText(166, 76, carState, state.connected ? ColorEvccDark : ColorMuted, 1, ColorCard);
+    drawFrame(12, 56, 216, 34);
+    tft.drawFastVLine(84, 56, 34, ColorLine);
+    tft.drawFastVLine(156, 56, 34, ColorLine);
   }
 
   if (full || state.mode != lastModeKey) {
     lastModeKey = state.mode;
-    tft.fillRect(12, 154, 216, 34, ColorCard);
+    tft.fillRect(12, 104, 216, 112, ColorBg);
     for (const auto &button : buttons) {
       drawButton(button);
     }
@@ -298,9 +333,13 @@ void render(bool full = false) {
   const String vehicleKey = String(state.connected) + "|" + String(state.charging) + "|" + state.vehicle;
   if (full || vehicleKey != lastVehicleKey) {
     lastVehicleKey = vehicleKey;
-    clearCardArea(22, 215, 190, 30);
-    drawGfxText(22, 214, state.connected ? "Verbunden" : "Kein Fahrzeug", &FreeSansBold12pt7b, ColorText, ColorCard);
-    drawText(22, 238, state.charging ? "LAEDT GERADE" : "NICHT VERBUNDEN", state.charging ? ColorEvccDark : ColorMuted, 1, ColorCard);
+    clearCardArea(18, 234, 204, 20);
+    const String status = state.connected ? (state.charging ? "LAEDT" : "VERBUNDEN") : "KEIN FAHRZEUG";
+    const String detail = state.connected ? (state.vehicle.length() ? state.vehicle : "BEREIT") : "NICHT VERBUNDEN";
+    drawText(22, 234, status, state.connected ? ColorEvccDark : ColorText, 1, ColorCard);
+    drawText(22, 246, detail.substring(0, 24), ColorMuted, 1, ColorCard);
+    drawFrame(12, 226, 216, 68);
+    tft.drawFastHLine(12, 258, 216, ColorLine);
   }
 
   const String errorKey = state.evccOk ? "" : state.error;
@@ -316,13 +355,17 @@ void render(bool full = false) {
   const String metricsKey = formatPower(state.pvPower) + "|" + formatPower(state.gridPower) + "|" + soc;
   if (full || metricsKey != lastMetricsKey) {
     lastMetricsKey = metricsKey;
-    clearCardArea(18, 258, 204, 30);
-    drawText(24, 258, "PV", ColorMuted, 1, ColorCard);
-    drawText(24, 276, formatPower(state.pvPower), ColorEvccDark, 1, ColorCard);
-    drawText(96, 258, "NETZ", ColorMuted, 1, ColorCard);
-    drawText(96, 276, formatPower(state.gridPower), ColorText, 1, ColorCard);
-    drawText(174, 258, "SOC", ColorMuted, 1, ColorCard);
-    drawText(174, 276, soc, ColorText, 1, ColorCard);
+    clearCardArea(18, 264, 204, 24);
+    drawText(24, 264, "PV", ColorMuted, 1, ColorCard);
+    drawText(24, 278, formatPower(state.pvPower), ColorEvccDark, 1, ColorCard);
+    drawText(96, 264, "NETZ", ColorMuted, 1, ColorCard);
+    drawText(96, 278, formatPower(state.gridPower), ColorText, 1, ColorCard);
+    drawText(174, 264, "SOC", ColorMuted, 1, ColorCard);
+    drawText(174, 278, soc, ColorText, 1, ColorCard);
+    drawFrame(12, 226, 216, 68);
+    tft.drawFastHLine(12, 258, 216, ColorLine);
+    tft.drawFastVLine(84, 258, 36, ColorLine);
+    tft.drawFastVLine(156, 258, 36, ColorLine);
   }
 
   if (!state.evccOk && state.error.length()) {
@@ -335,12 +378,14 @@ void loadAppConfig() {
   preferences.begin("evccswitch", true);
   String host = preferences.getString("evccHost", EVCC_HOST);
   String label = preferences.getString("label", WALLBOX_LABEL);
+  String standardMode = preferences.getString("standard", EVCC_STANDARD_MODE);
   appConfig.evccPort = preferences.getUShort("evccPort", EVCC_PORT);
   appConfig.loadpointId = preferences.getUChar("loadpointId", EVCC_LOADPOINT_ID);
   preferences.end();
 
   host.toCharArray(appConfig.evccHost, sizeof(appConfig.evccHost));
   label.toCharArray(appConfig.label, sizeof(appConfig.label));
+  setStandardModeValue(standardMode.c_str());
   if (appConfig.loadpointId == 0) {
     appConfig.loadpointId = 1;
   }
@@ -353,6 +398,7 @@ void saveAppConfig() {
   preferences.putUShort("evccPort", appConfig.evccPort);
   preferences.putUChar("loadpointId", appConfig.loadpointId);
   preferences.putString("label", appConfig.label);
+  preferences.putString("standard", appConfig.standardMode);
   preferences.end();
 }
 
@@ -397,11 +443,15 @@ void setupNetwork() {
   char loadpointBuffer[4];
   snprintf(portBuffer, sizeof(portBuffer), "%u", appConfig.evccPort);
   snprintf(loadpointBuffer, sizeof(loadpointBuffer), "%u", appConfig.loadpointId);
+  char standardModeBuffer[8];
+  strlcpy(standardModeBuffer, appConfig.standardMode, sizeof(standardModeBuffer));
 
   WiFiManagerParameter evccHostParam("evcc_host", "EVCC Host/IP", appConfig.evccHost, sizeof(appConfig.evccHost));
   WiFiManagerParameter evccPortParam("evcc_port", "EVCC Port", portBuffer, sizeof(portBuffer));
   WiFiManagerParameter loadpointParam("loadpoint_id", "EVCC Loadpoint ID", loadpointBuffer, sizeof(loadpointBuffer));
   WiFiManagerParameter labelParam("label", "Display Label", appConfig.label, sizeof(appConfig.label));
+  WiFiManagerParameter standardModeParam("standard_mode", "Standard mode: pv or minpv", standardModeBuffer,
+                                         sizeof(standardModeBuffer));
 
   WiFiManager wm;
   wm.setTitle("ESP32 EVCC Switch");
@@ -411,6 +461,7 @@ void setupNetwork() {
   wm.addParameter(&evccPortParam);
   wm.addParameter(&loadpointParam);
   wm.addParameter(&labelParam);
+  wm.addParameter(&standardModeParam);
 
   showSetupPortalInfo();
   const bool connected = wm.autoConnect("EVCC-Switch", "evccswitch");
@@ -420,6 +471,7 @@ void setupNetwork() {
 
   strlcpy(appConfig.evccHost, evccHostParam.getValue(), sizeof(appConfig.evccHost));
   strlcpy(appConfig.label, labelParam.getValue(), sizeof(appConfig.label));
+  setStandardModeValue(standardModeParam.getValue());
   appConfig.evccPort = constrain(atoi(evccPortParam.getValue()), 1, 65535);
   appConfig.loadpointId = constrain(atoi(loadpointParam.getValue()), 1, 9);
   state.title = appConfig.label;
@@ -559,6 +611,25 @@ bool setEvccMode(const char *mode) {
   return true;
 }
 
+void updateConnectionReset() {
+  if (!state.evccOk) {
+    return;
+  }
+
+  if (!connectionStateKnown) {
+    connectionStateKnown = true;
+    lastConnected = state.connected;
+    return;
+  }
+
+  const bool disconnectedAfterSession = lastConnected && !state.connected;
+  lastConnected = state.connected;
+
+  if (disconnectedAfterSession && !isStandardMode(state.mode)) {
+    setEvccMode(appConfig.standardMode);
+  }
+}
+
 bool readTouchPoint(int16_t &x, int16_t &y) {
   if (!touch.touched()) {
     return false;
@@ -593,8 +664,9 @@ void handleTouch() {
 
     tft.fillRect(12, 262, 216, 30, ColorWarn);
     drawText(20, 273, String("Setze Modus: ") + button.label, ColorText, 1, ColorWarn);
-    setEvccMode(button.mode);
+    setEvccMode(resolveMode(button.mode));
     fetchEvccState();
+    updateConnectionReset();
     render(true);
     return;
   }
@@ -621,6 +693,7 @@ void setup() {
   resetConfigurationIfRequested();
   setupNetwork();
   fetchEvccState();
+  updateConnectionReset();
   render(true);
 }
 
@@ -639,6 +712,7 @@ void loop() {
   if (now - lastPoll >= PollIntervalMs) {
     lastPoll = now;
     fetchEvccState();
+    updateConnectionReset();
     render();
   }
 

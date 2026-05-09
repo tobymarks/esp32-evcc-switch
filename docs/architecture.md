@@ -41,9 +41,11 @@ Startbildschirm:
 - aktueller EVCC-Modus
 - Fahrzeug verbunden / laedt
 - Ladeleistung, Netzbezug/Einspeisung, PV-Leistung
-- vier grosse Touch-Flaechen: Aus, PV, Min+PV, Schnell
+- drei grosse Touch-Flaechen: Aus, Standard, Schnell
 
 Das CYD wird hochkant mit USB-Anschluss unten montiert. Die Firmware nutzt dafuer standardmaessig `DISPLAY_ROTATION=0` und `TOUCH_ROTATION=0`. Falls eine CYD-Revision anders ausgerichtet ist, koennen diese Defines in `platformio.ini` oder einer lokalen `Config.h` angepasst werden.
+
+`Standard` ist ein konfigurierbarer EVCC-Modus und kann `minpv` oder `pv` sein. Nach dem Abstecken setzt die Firmware auf diesen Standardmodus zurueck, wenn die Session vorher auf `off` oder `now` umgestellt wurde.
 
 ## Technische Basis
 
